@@ -320,22 +320,47 @@
 		return selectedBody;
 	}
 
+	// add dragging
+	let draggedBody: planck.Body | null = null;
+	let isDragging = false;
+	let mousePosition = Vec2(0, 0);
+
+	function handleMouseDown(event: MouseEvent) {
+		const rect = canvas.getBoundingClientRect();
+		mouseX = event.clientX - rect.left;
+		mouseY = event.clientY - rect.top;
+		mousePosition = Vec2(mouseX, mouseY);
+
+		const body = getBodyAtMouse(mouseX, mouseY);
+		if (body) {
+			draggedBody = body;
+			isDragging = true;
+		}
+	}
+
 	function handleMouseMove(event: MouseEvent) {
 		const rect = canvas.getBoundingClientRect();
 		mouseX = event.clientX - rect.left;
 		mouseY = event.clientY - rect.top;
+		mousePosition = Vec2(mouseX, mouseY);
 
-		const body = getBodyAtMouse(mouseX, mouseY);
-		if (body) {
-			const userData = body.getUserData() as UserData;
-			if (userData?.type === 'transaction') {
-				hoverData = userData.data as Transaction;
-			} else {
-				hoverData = null;
-			}
-		} else {
-			hoverData = null;
+		if (isDragging && draggedBody) {
+			// Calculate force direction toward the mouse position
+			const bodyPosition = draggedBody.getPosition();
+			const forceDirection = Vec2(
+				mousePosition.x - bodyPosition.x,
+				mousePosition.y - bodyPosition.y
+			);
+
+			// Apply a scaled force to move the body toward the mouse
+			const forceMagnitude = 500 * draggedBody.getMass();
+			draggedBody.applyForceToCenter(forceDirection.mul(forceMagnitude));
 		}
+	}
+
+	function handleMouseUp(event: MouseEvent) {
+		isDragging = false;
+		draggedBody = null;
 	}
 
 	function animate(ctx: CanvasRenderingContext2D) {
@@ -375,21 +400,13 @@
 		if (!ctx) return;
 
 		window.addEventListener('resize', resizeHandler);
+		canvas.addEventListener('mousedown', handleMouseDown);
 		canvas.addEventListener('mousemove', handleMouseMove);
+		canvas.addEventListener('mouseup', handleMouseUp);
 
 		createPhysicsWorld();
 
-		spawnQueue = unconfirmed.items.map((item) => ({
-			id: item.id,
-			outputs: item.outputs.map((output) => ({
-				value: output.value,
-				assets: output.assets?.map((asset) => ({
-					amount: asset.amount,
-					tokenId: asset.tokenId
-				}))
-			}))
-		}));
-
+		spawnQueue = [...unconfirmed.items];
 		spawnInterval = setInterval(spawnTransaction, SPAWN_DELAY);
 
 		isInitialized = true;
@@ -398,9 +415,12 @@
 
 	onDestroy(() => {
 		window.removeEventListener('resize', resizeHandler);
+		canvas.removeEventListener('mousedown', handleMouseDown);
 		canvas.removeEventListener('mousemove', handleMouseMove);
+		canvas.removeEventListener('mouseup', handleMouseUp);
 		cancelAnimationFrame(animationFrameId);
 		clearInterval(spawnInterval);
+		world.clearForces();
 	});
 </script>
 
